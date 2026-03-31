@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+praw
+openai
+python-dotenv
+pydantic
