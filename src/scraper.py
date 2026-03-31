@@ -17,7 +17,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 YARS_PATH = os.path.join(SCRIPT_DIR, "YARS", "src")
 sys.path.insert(0, YARS_PATH)
 
-# ── 强制注入代理到 YARS ──────────────────────────────────────
+# ── 强制注入代理 + 完整 Headers 到 YARS ──────────────────────────────────────
 import os as _os
 _http  = _os.environ.get("HTTP_PROXY")  or _os.environ.get("http_proxy")
 _https = _os.environ.get("HTTPS_PROXY") or _os.environ.get("https_proxy")
@@ -29,11 +29,25 @@ if _http or _https:
 
     import requests as _req
     _orig = _req.Session.request
+    
+    # Reddit 需要完整浏览器 headers 才返回 JSON
+    _BROWSER_HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+    }
+    
     def _proxied(self, method, url, **kw):
         kw.setdefault("proxies", _proxy)
+        # 强制注入完整浏览器 headers
+        for k, v in _BROWSER_HEADERS.items():
+            self.headers.setdefault(k, v)
         return _orig(self, method, url, **kw)
+    
     _req.Session.request = _proxied
-    print(f"[代理] YARS 已注入代理: {_proxy}")
+    print(f"[代理] YARS 已注入代理 + 浏览器 Headers: {_proxy}")
 # ──────────────────────────────────────────────────────────────
 
 from yars.yars import YARS
