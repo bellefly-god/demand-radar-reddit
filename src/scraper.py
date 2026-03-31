@@ -110,46 +110,54 @@ class RedditScraper:
         self.reddit_source = ReportSource(name="Reddit", type="reddit")
     
     def scrape_posts(self, keyword: str, time_filter: str = "month", limit: int = 100) -> List[Dict]:
-        """抓取帖子"""
+        """抓取帖子 - 使用 YARS 的搜索 API"""
         all_posts = []
         
-        for sort in ["hot", "new", "top"]:
-            try:
-                posts = self.yars.fetch_subreddit_posts(
-                    "all",
-                    limit=limit,
-                    category=sort,
-                    time_filter=time_filter
-                )
+        # 方式1: 直接搜索 Reddit（优先）
+        try:
+            print(f"[scrape_posts] 搜索关键词: {keyword}")
+            search_results = self.yars.search_reddit(keyword, limit=limit)
+            
+            for p in search_results:
+                title = p.get("title", "")
+                link = p.get("link", "")
+                description = p.get("description", "")
                 
-                for p in posts:
+                all_posts.append({
+                    "title": title,
+                    "description": description,
+                    "author": "unknown",
+                    "url": link,
+                    "score": 0,
+                    "num_comments": 0,
+                    "created_utc": 0
+                })
+            print(f"[scrape_posts] 搜索找到 {len(search_results)} 条帖子")
+        except Exception as e:
+            print(f"[scrape_posts] 搜索错误: {e}")
+        
+        # 方式2: 在相关 subreddit 搜索（补充）
+        target_subreddits = ["SaaS", "indiehackers", "Entrepreneur", "startups", "Business"]
+        for subreddit in target_subreddits:
+            try:
+                results = self.yars.search_subreddit(subreddit, keyword, limit=20)
+                for p in results:
                     title = p.get("title", "")
-                    description = p.get("description", "")
-                    
-                    # 过滤包含关键词的帖子
-                    if keyword.lower() in title.lower() or keyword.lower() in description.lower():
+                    if title not in [x["title"] for x in all_posts]:  # 去重
                         all_posts.append({
                             "title": title,
-                            "description": description,
-                            "author": p.get("author", "unknown"),
-                            "url": f"https://reddit.com{p.get('permalink', '')}",
-                            "score": p.get("score", 0),
-                            "num_comments": p.get("num_comments", 0),
-                            "created_utc": p.get("created_utc", 0)
+                            "description": p.get("description", ""),
+                            "author": "unknown",
+                            "url": p.get("link", ""),
+                            "score": 0,
+                            "num_comments": 0,
+                            "created_utc": 0
                         })
             except Exception as e:
-                print(f"[scrape_posts] {sort} 错误: {e}")
+                print(f"[scrape_posts] {subreddit} 搜索错误: {e}")
                 continue
         
-        # 去重
-        seen = set()
-        unique = []
-        for p in all_posts:
-            if p["title"] not in seen:
-                seen.add(p["title"])
-                unique.append(p)
-        
-        return unique
+        return all_posts[:limit]  # 限制返回数量
     
     def scrape_comments(self, permalink: str, limit: int = 10) -> List[Dict]:
         """抓取帖子评论"""
@@ -177,7 +185,14 @@ class RedditScraper:
             
             # 抓取评论
             if include_comments and post.get("num_comments", 0) > 0:
-                permalink = post["url"].split("reddit.com")[1]
+                url = post.get("url", "")
+                if "reddit.com" in url:
+                    permalink = url.split("reddit.com")[1]
+                elif url.startswith("/"):
+                    permalink = url
+                else:
+                    permalink = url
+                
                 comments = self.scrape_comments(permalink, limit=5)
                 for c in comments:
                     body = c.get("body", "")
